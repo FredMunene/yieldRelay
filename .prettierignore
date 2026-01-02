@@ -1,0 +1,6 @@
+out
+cache
+lib
+node_modules
+frontend/node_modules
+*.sol
