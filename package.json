@@ -1,0 +1,18 @@
+{
+  "name": "octant-mini",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "npm run lint:sol && npm run lint:prettier",
+    "lint:sol": "solhint \"smart_contracts/src/**/*.sol\" \"smart_contracts/script/**/*.sol\" \"smart_contracts/test/**/*.sol\"",
+    "lint:prettier": "prettier --check \"{docs,frontend,smart_contracts/scripts}/**/*.{md,js,ts,tsx,json}\"",
+    "format": "npm run format:sol && npm run format:prettier",
+    "format:sol": "forge fmt --root smart_contracts",
+    "format:prettier": "prettier --write \"{docs,frontend,smart_contracts/scripts}/**/*.{md,js,ts,tsx,json}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "solhint": "^4.5.4"
+  },
+  "packageManager": "npm@10"
+}
