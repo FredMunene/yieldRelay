@@ -1,21 +1,32 @@
 import type { Address } from 'viem';
-import { sepolia } from 'viem/chains';
+import type { Chain } from 'viem/chains';
 
 const DEFAULTS = {
-  vault: '0xEd74acc3a88c06E1f7b18f8800898d37bf1B217f',
-  router: '0xFE7726C0915B14B2584A2407cF3d34496a0d223B',
-  strategy: '0xF5DB0574FFa04f79BCbdE87d318B1cC1310acbE9',
-  asset: '0x42B031295A44Ca499bB118dfFA7E2f29AFE0C88F',
+  vault: '0x1a17f849C8287b21be9bA54e8193284F84a05018',
+  router: '0x7E81E4697863cAB4FE4C0d820baCbc9e9843e3dD',
+  registry: '0x0969C4a04Bb4C5A6C3F015bB24f6E88D4C692842',
+  asset: '0x2161f1A296F73702D69eFAA44e466FB2c1C3aB04',
 } as const satisfies Record<string, Address>;
 
 const env = import.meta.env;
 
-export const NETWORK = sepolia;
+export const NETWORK = {
+  id: 5003,
+  name: 'Mantle Sepolia',
+  nativeCurrency: { name: 'MNT', symbol: 'MNT', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.sepolia.mantle.xyz'] },
+    public: { http: ['https://rpc.sepolia.mantle.xyz'] },
+  },
+  blockExplorers: {
+    default: { name: 'Mantle Explorer', url: 'https://explorer.sepolia.mantle.xyz' },
+  },
+} as const satisfies Chain;
 
 export const CONTRACTS = {
   vault: (env.VITE_VAULT_ADDRESS ?? DEFAULTS.vault) as Address,
   router: (env.VITE_ROUTER_ADDRESS ?? DEFAULTS.router) as Address,
-  strategy: (env.VITE_STRATEGY_ADDRESS ?? DEFAULTS.strategy) as Address,
+  registry: (env.VITE_REGISTRY_ADDRESS ?? DEFAULTS.registry) as Address,
   asset: (env.VITE_ASSET_ADDRESS ?? DEFAULTS.asset) as Address,
 };
 
@@ -28,9 +39,20 @@ export const PROGRAM_METADATA: Record<string, { title: string; description: stri
   },
   'ipfs://program1': {
     title: 'Builder Round',
-    description: 'Fuel early teams experimenting with new Octant use cases.',
+    description: 'Fuel early teams experimenting with new YieldRelay use cases.',
   },
 };
+
+export const BENEFICIARIES = [
+  {
+    address: (env.VITE_BENEFICIARY_0_ADDR ?? '0x6c550478ced0f3a3451419ceb38d59e885b2178c') as Address,
+    metadataURI: 'ipfs://program0',
+  },
+  {
+    address: (env.VITE_BENEFICIARY_1_ADDR ?? '0xF41886af501e2a0958dBD31D9a28AcD6c2f5db06') as Address,
+    metadataURI: 'ipfs://program1',
+  },
+] as const;
 
 export const USD_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',

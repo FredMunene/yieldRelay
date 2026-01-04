@@ -13,4 +13,8 @@ export const erc20Abi = [
       { name: 'spender', type: 'address' },
       { name: 'amount', type: 'uint256' },
     ], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'mint', stateMutability: 'nonpayable', inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ], outputs: [] },
 ] as const satisfies Abi;

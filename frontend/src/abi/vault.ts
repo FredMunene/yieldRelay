@@ -1,21 +1,25 @@
 import type { Abi } from 'viem';
 
 export const vaultAbi = [
-  { type: 'function', name: 'totalAssets', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'totalSupply', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'managedAssets', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'availableLiquidity', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'asset', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'deposit', stateMutability: 'nonpayable', inputs: [
-      { name: 'assets', type: 'uint256' },
-      { name: 'receiver', type: 'address' },
-    ], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'withdraw', stateMutability: 'nonpayable', inputs: [
-      { name: 'assets', type: 'uint256' },
-      { name: 'receiver', type: 'address' },
-      { name: 'owner', type: 'address' },
-    ], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'convertToShares', stateMutability: 'view', inputs: [{ name: 'assets', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'convertToAssets', stateMutability: 'view', inputs: [{ name: 'shares', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'totalPrincipal', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'principalOf', stateMutability: 'view', inputs: [{ name: 'depositor', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'accruedYield', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'pendingYield', stateMutability: 'view', inputs: [{ name: 'depositor', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'beneficiaries', type: 'address[]' },
+      { name: 'bps', type: 'uint16[]' },
+    ],
+    outputs: [],
+  },
+  { type: 'function', name: 'withdrawPrincipal', stateMutability: 'nonpayable', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [] },
+  { type: 'function', name: 'setSplitConfig', stateMutability: 'nonpayable', inputs: [
+      { name: 'beneficiaries', type: 'address[]' },
+      { name: 'bps', type: 'uint16[]' },
+    ], outputs: [] },
+  { type: 'function', name: 'allocateYield', stateMutability: 'nonpayable', inputs: [{ name: 'depositor', type: 'address' }], outputs: [] },
 ] as const satisfies Abi;

@@ -4,16 +4,16 @@ import {
   useChainId,
   usePublicClient,
   useReadContract,
+  useReadContracts,
   useSwitchChain,
   useWriteContract,
 } from 'wagmi';
 import { formatUnits, maxUint256, parseUnits } from 'viem';
-import { CONTRACTS, DISPLAY_APY, NETWORK, PROGRAM_METADATA } from './config/contracts';
+import { BENEFICIARIES, CONTRACTS, DISPLAY_APY, NETWORK, PROGRAM_METADATA } from './config/contracts';
 import { vaultAbi } from './abi/vault';
 import { routerAbi } from './abi/router';
 import { erc20Abi } from './abi/erc20';
 import { ConnectButton } from './components/ConnectButton';
-import { SimulationModal } from './components/SimulationModal';
 import { formatCurrency } from './lib/format';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -25,12 +25,9 @@ type FlowCard = {
   note?: string;
 };
 
-type Program = {
-  id: number;
-  recipient: string;
-  bps: number;
+type BeneficiaryConfig = {
+  address: `0x${string}`;
   metadataURI: string;
-  active: boolean;
 };
 
 const flows: FlowCard[] = [
@@ -38,19 +35,19 @@ const flows: FlowCard[] = [
     id: 'deposit',
     title: 'Deposit',
     description:
-      'Put treasury assets into a secure ERC-4626 vault. Your principal stays safe while Octant Mini prepares it to generate yield.',
+      'Put treasury assets into a YieldRelay vault. Your principal stays safe while yield accrues.',
   },
   {
     id: 'generate',
     title: 'Generate',
-    description: 'Your vault automatically earns yield through diversified, low-risk DeFi strategies.',
-    note: 'No manual management required.',
+    description: 'The vault supplies funds to a yield source and tracks accrued yield separately.',
+    note: 'Yield is isolated from principal by design.',
   },
   {
     id: 'route',
     title: 'Route',
-    description: 'The Dragon Router sends a portion of your yield directly to programs you choose.',
-    note: "Always aligned with your ecosystem's priorities.",
+    description: 'Yield routes to registered beneficiaries using the split you define.',
+    note: 'Compliance-aware, transparent, and auditable.',
   },
 ];
 
@@ -108,27 +105,36 @@ const iconMap: Record<string, JSX.Element> = {
   ),
 };
 
-const yieldSources = ['Lido', 'Aave', 'Rocket Pool'];
+const yieldSources = ['Mock Aave Pool', 'YieldRelay Router'];
 
 const placeholderLandingVaults = [
   {
-    id: 'stable',
-    name: 'Dragon Vault Stable',
+    id: 'create',
+    name: 'Create Vault',
     variant: 'stable' as const,
-    principal: '$ 12.1m',
-    apy: '5.0%',
-    topFundedLabel: 'Top Funded Genre',
-    topFundedValue: 'Public Goods Grants',
+    principal: 'Configure splits',
+    apy: 'Choose beneficiaries',
+    topFundedLabel: 'Status',
+    topFundedValue: 'Ready to deploy',
   },
   {
-    id: 'experimental',
-    name: 'Dragon Vault Experimental',
+    id: 'current',
+    name: 'Current Vault',
     variant: 'experimental' as const,
-    principal: '$ 12.1m',
-    apy: '5.0%',
-    topFundedLabel: 'Top Funded Program',
-    topFundedValue: 'Public Goods Grants',
-    action: 'View Routing',
+    principal: '$ 0.00',
+    apy: '0.0%',
+    topFundedLabel: 'Beneficiaries',
+    topFundedValue: 'Configured splits',
+    action: 'View Dashboard',
+  },
+  {
+    id: 'beneficiaries',
+    name: 'Beneficiaries',
+    variant: 'stable' as const,
+    principal: 'Verify eligibility',
+    apy: 'Claim yield',
+    topFundedLabel: 'Compliance',
+    topFundedValue: 'Registry-backed',
   },
 ];
 
@@ -137,17 +143,17 @@ const bnToNumber = (value?: bigint, decimals = 18) => {
   return Number(formatUnits(value, decimals));
 };
 
-const programTitle = (program: Program) =>
-  PROGRAM_METADATA[program.metadataURI]?.title ?? `Program #${program.id + 1}`;
+const beneficiaryTitle = (beneficiary: BeneficiaryConfig, index: number) =>
+  PROGRAM_METADATA[beneficiary.metadataURI]?.title ?? `Beneficiary #${index + 1}`;
 
-const programDescription = (program: Program) =>
-  PROGRAM_METADATA[program.metadataURI]?.description ?? 'Active ecosystem recipient';
+const beneficiaryDescription = (beneficiary: BeneficiaryConfig) =>
+  PROGRAM_METADATA[beneficiary.metadataURI]?.description ?? 'Eligible ecosystem recipient';
 
 function App() {
   const renderVaultLabel = (name: string) => name.split(' ').pop() ?? '';
   const [view, setView] = useState<'landing' | 'demo'>('landing');
-  const [showSimulation, setShowSimulation] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
+  const [mintAmount, setMintAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -173,34 +179,16 @@ function App() {
   });
   const assetSymbol = assetSymbolQuery.data ?? 'TOKEN';
 
-  const totalAssetsQuery = useReadContract({
+  const totalPrincipalQuery = useReadContract({
     address: CONTRACTS.vault,
     abi: vaultAbi,
-    functionName: 'totalAssets',
+    functionName: 'totalPrincipal',
     query: { refetchInterval: 15000 },
   });
-  const managedAssetsQuery = useReadContract({
+  const accruedYieldQuery = useReadContract({
     address: CONTRACTS.vault,
     abi: vaultAbi,
-    functionName: 'managedAssets',
-    query: { refetchInterval: 15000 },
-  });
-  const availableLiquidityQuery = useReadContract({
-    address: CONTRACTS.vault,
-    abi: vaultAbi,
-    functionName: 'availableLiquidity',
-    query: { refetchInterval: 15000 },
-  });
-  const totalSupplyQuery = useReadContract({
-    address: CONTRACTS.vault,
-    abi: vaultAbi,
-    functionName: 'totalSupply',
-  });
-  const routerBalanceQuery = useReadContract({
-    address: CONTRACTS.asset,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [CONTRACTS.router],
+    functionName: 'accruedYield',
     query: { refetchInterval: 15000 },
   });
   const walletBalanceQuery = useReadContract({
@@ -217,69 +205,51 @@ function App() {
     args: [address ?? ZERO_ADDRESS, CONTRACTS.vault],
     query: { enabled: Boolean(address), refetchInterval: 15000 },
   });
-  const userSharesQuery = useReadContract({
+  const userPrincipalQuery = useReadContract({
     address: CONTRACTS.vault,
     abi: vaultAbi,
-    functionName: 'balanceOf',
+    functionName: 'principalOf',
     args: [address ?? ZERO_ADDRESS],
     query: { enabled: Boolean(address), refetchInterval: 15000 },
   });
-  const programsQuery = useReadContract({
-    address: CONTRACTS.router,
-    abi: routerAbi,
-    functionName: 'getPrograms',
-    query: { refetchInterval: 20000 },
+  const userPendingYieldQuery = useReadContract({
+    address: CONTRACTS.vault,
+    abi: vaultAbi,
+    functionName: 'pendingYield',
+    args: [address ?? ZERO_ADDRESS],
+    query: { enabled: Boolean(address), refetchInterval: 15000 },
   });
 
-  const programs: Program[] = useMemo(() => {
-    if (!programsQuery.data) return [];
-    return programsQuery.data.map((program, idx) => {
-      const item = program as {
-        recipient: `0x${string}`;
-        bps: number;
-        metadataURI: string;
-        active: boolean;
-      };
-      return {
-        id: idx,
-        recipient: item.recipient,
-        bps: Number(item.bps ?? 0),
-        metadataURI: item.metadataURI ?? '',
-        active: Boolean(item.active),
-      };
-    });
-  }, [programsQuery.data]);
+  const beneficiaries = BENEFICIARIES as BeneficiaryConfig[];
+  const claimableResults = useReadContracts({
+    contracts: beneficiaries.map((beneficiary) => ({
+      address: CONTRACTS.router,
+      abi: routerAbi,
+      functionName: 'claimable',
+      args: [beneficiary.address],
+    })),
+    query: { refetchInterval: 15000 },
+  });
 
   useEffect(() => {
-    if (!programs.length) return;
+    if (!beneficiaries.length) return;
     setAllocationDraft((prev) => {
-      const next = programs.map((program) => program.bps / 100);
-      if (
-        prev.length !== next.length ||
-        prev.some((value, idx) => Math.round(value * 100) !== programs[idx].bps)
-      ) {
-        return next;
+      if (prev.length === beneficiaries.length && prev.some((value) => value > 0)) {
+        return prev;
       }
-      return prev;
+      const evenSplit = Math.floor(1000 / beneficiaries.length) / 10;
+      const remainder = 100 - evenSplit * (beneficiaries.length - 1);
+      return beneficiaries.map((_, idx) => (idx === beneficiaries.length - 1 ? remainder : evenSplit));
     });
-  }, [programs]);
+  }, [beneficiaries.length]);
 
-  const tvl = bnToNumber(totalAssetsQuery.data, assetDecimals);
-  const managedAssetsValue = bnToNumber(managedAssetsQuery.data, assetDecimals);
-  const availableLiquidityValue = bnToNumber(availableLiquidityQuery.data, assetDecimals);
-  const routerBalanceValue = bnToNumber(routerBalanceQuery.data, assetDecimals);
+  const tvl = bnToNumber(totalPrincipalQuery.data, assetDecimals);
+  const accruedYieldValue = bnToNumber(accruedYieldQuery.data, assetDecimals);
   const walletBalanceValue = isConnected ? bnToNumber(walletBalanceQuery.data, assetDecimals) : 0;
   const allowanceValue = allowanceQuery.data ?? 0n;
-  const totalSupply = totalSupplyQuery.data ?? 0n;
-  const userShares = userSharesQuery.data ?? 0n;
+  const userPrincipalValue = bnToNumber(userPrincipalQuery.data, assetDecimals);
+  const userPendingYieldValue = bnToNumber(userPendingYieldQuery.data, assetDecimals);
 
-  const userShareValue = useMemo(() => {
-    if (!userShares || !totalAssetsQuery.data || totalSupply === 0n) return 0;
-    const value = (userShares * totalAssetsQuery.data) / totalSupply;
-    return bnToNumber(value, assetDecimals);
-  }, [userShares, totalAssetsQuery.data, totalSupply, assetDecimals]);
-
-  const projectedMonthlyYield = tvl * (DISPLAY_APY / 100) / 12;
 
   const depositAmountUnits = useMemo(() => {
     if (!depositAmount) return null;
@@ -289,6 +259,15 @@ function App() {
       return null;
     }
   }, [depositAmount, assetDecimals]);
+
+  const mintAmountUnits = useMemo(() => {
+    if (!mintAmount) return null;
+    try {
+      return parseUnits(mintAmount, assetDecimals);
+    } catch {
+      return null;
+    }
+  }, [mintAmount, assetDecimals]);
 
   const withdrawAmountUnits = useMemo(() => {
     if (!withdrawAmount) return null;
@@ -304,42 +283,12 @@ function App() {
   );
 
   const allocationSum = allocationDraft.reduce((acc, value) => acc + value, 0);
-  const allocationsMatchOnChain =
-    allocationDraft.length === programs.length &&
-    allocationDraft.every(
-      (percent, idx) => Math.round(percent * 100) === (programs[idx]?.bps ?? 0),
-    );
-
-  const impactPrograms = programs
-    .filter((program) => program.active && program.bps > 0)
-    .map((program) => {
-      const percent = program.bps / 100;
-      const queuedAmount = routerBalanceValue * (program.bps / 10_000);
-      return {
-        id: program.id,
-        title: programTitle(program),
-        percent,
-        amount: queuedAmount,
-        description: programDescription(program),
-      };
-    });
-
-  const simulationPrograms = (programs.length ? programs : [
-    { id: 0, recipient: ZERO_ADDRESS, bps: 5000, metadataURI: 'ipfs://program0', active: true },
-    { id: 1, recipient: ZERO_ADDRESS, bps: 5000, metadataURI: 'ipfs://program1', active: true },
-  ]).map((program) => ({
-    id: program.id,
-    title: programTitle(program),
-    percent: program.bps / 100,
-    amount: projectedMonthlyYield * (program.bps / 10_000),
-    description: programDescription(program),
-  }));
-
-  const allocationDisplay = programs.length
-    ? programs.map((program) => ({
-        id: `program-${program.id}`,
-        label: programTitle(program),
-        value: `${(program.bps / 100).toFixed(1)}%`,
+  const allocationSumIsValid = Math.abs(allocationSum - 100) < 0.01;
+  const allocationDisplay = beneficiaries.length
+    ? beneficiaries.map((beneficiary, idx) => ({
+        id: `beneficiary-${beneficiary.address}`,
+        label: beneficiaryTitle(beneficiary, idx),
+        value: `${(allocationDraft[idx] ?? 0).toFixed(1)}%`,
       }))
     : placeholderLandingVaults.map((vault) => ({
         id: vault.id,
@@ -347,16 +296,34 @@ function App() {
         value: vault.apy,
       }));
 
+  const beneficiaryClaimables = beneficiaries.map((beneficiary, idx) => {
+    const result = claimableResults.data?.[idx];
+    const raw = result?.result as bigint | undefined;
+    return {
+      ...beneficiary,
+      title: beneficiaryTitle(beneficiary, idx),
+      description: beneficiaryDescription(beneficiary),
+      claimable: bnToNumber(raw, assetDecimals),
+    };
+  });
+  const connectedBeneficiaryIndex = beneficiaries.findIndex(
+    (beneficiary) => beneficiary.address.toLowerCase() === address?.toLowerCase(),
+  );
+  const connectedClaimableRaw =
+    connectedBeneficiaryIndex >= 0
+      ? (claimableResults.data?.[connectedBeneficiaryIndex]?.result as bigint | undefined)
+      : undefined;
+  const connectedClaimableValue = bnToNumber(connectedClaimableRaw, assetDecimals);
+
   const refetchAll = async () => {
     await Promise.all([
-      totalAssetsQuery.refetch?.(),
-      managedAssetsQuery.refetch?.(),
-      availableLiquidityQuery.refetch?.(),
-      routerBalanceQuery.refetch?.(),
+      totalPrincipalQuery.refetch?.(),
+      accruedYieldQuery.refetch?.(),
       walletBalanceQuery.refetch?.(),
       allowanceQuery.refetch?.(),
-      userSharesQuery.refetch?.(),
-      programsQuery.refetch?.(),
+      userPrincipalQuery.refetch?.(),
+      userPendingYieldQuery.refetch?.(),
+      claimableResults.refetch?.(),
     ]);
   };
 
@@ -400,12 +367,14 @@ function App() {
 
   const handleDeposit = async () => {
     if (!depositAmountUnits || depositAmountUnits <= 0n) return;
+    const beneficiariesPayload = beneficiaries.map((item) => item.address);
+    const bpsPayload = allocationDraft.map((percent) => Math.round(percent * 100));
     await runTransaction('Deposit', () =>
       writeContractAsync({
         address: CONTRACTS.vault,
         abi: vaultAbi,
         functionName: 'deposit',
-        args: [depositAmountUnits, address ?? ZERO_ADDRESS],
+        args: [depositAmountUnits, beneficiariesPayload, bpsPayload],
       }),
     );
     setDepositAmount('');
@@ -417,50 +386,75 @@ function App() {
       writeContractAsync({
         address: CONTRACTS.vault,
         abi: vaultAbi,
-        functionName: 'withdraw',
-        args: [withdrawAmountUnits, address ?? ZERO_ADDRESS, address ?? ZERO_ADDRESS],
+        functionName: 'withdrawPrincipal',
+        args: [withdrawAmountUnits],
       }),
     );
     setWithdrawAmount('');
   };
 
+  const handleMint = async () => {
+    if (!mintAmountUnits || mintAmountUnits <= 0n) return;
+    await runTransaction('Mint', () =>
+      writeContractAsync({
+        address: CONTRACTS.asset,
+        abi: erc20Abi,
+        functionName: 'mint',
+        args: [address ?? ZERO_ADDRESS, mintAmountUnits],
+      }),
+    );
+    setMintAmount('');
+  };
+
   const handleSaveAllocations = async () => {
     if (!allocationDraft.length) return;
+    const beneficiariesPayload = beneficiaries.map((item) => item.address);
     const bpsPayload = allocationDraft.map((percent) => Math.round(percent * 100));
-    await runTransaction('Allocations updated', () =>
+    await runTransaction('Split updated', () =>
       writeContractAsync({
-        address: CONTRACTS.router,
-        abi: routerAbi,
-        functionName: 'setAllocations',
-        args: [bpsPayload],
+        address: CONTRACTS.vault,
+        abi: vaultAbi,
+        functionName: 'setSplitConfig',
+        args: [beneficiariesPayload, bpsPayload],
       }),
     );
   };
 
-  const handleRoute = async () => {
-    await runTransaction('Route', () =>
+  const handleAllocateYield = async () => {
+    await runTransaction('Allocate Yield', () =>
+      writeContractAsync({
+        address: CONTRACTS.vault,
+        abi: vaultAbi,
+        functionName: 'allocateYield',
+        args: [address ?? ZERO_ADDRESS],
+      }),
+    );
+  };
+
+  const handleClaimYield = async () => {
+    if (connectedBeneficiaryIndex < 0) return;
+    await runTransaction('Claim Yield', () =>
       writeContractAsync({
         address: CONTRACTS.router,
         abi: routerAbi,
-        functionName: 'route',
+        functionName: 'claimYield',
         args: [],
       }),
     );
   };
 
   const goToLanding = () => {
-    setShowSimulation(false);
     setView('landing');
   };
 
   const heroVaultCard = {
     id: 'l1',
-    name: 'Dragon Vault L1',
+    name: 'YieldRelay Vault',
     variant: 'l1' as const,
     principal: tvl ? formatCurrency(tvl, { compact: true }) : '—',
     apy: `${DISPLAY_APY.toFixed(1)}%`,
-    topFundedLabel: 'Queued Yield',
-    topFundedValue: routerBalanceValue ? formatCurrency(routerBalanceValue, { compact: true }) : '—',
+    topFundedLabel: 'Accrued Yield',
+    topFundedValue: accruedYieldValue ? formatCurrency(accruedYieldValue, { compact: true }) : '—',
     action: 'Open Dashboard',
   };
 
@@ -479,9 +473,6 @@ function App() {
             </button>
             <div className="nav-actions">
               <ConnectButton />
-              <button className="btn btn-secondary" onClick={() => setShowSimulation(true)}>
-                Simulate Payout
-              </button>
             </div>
           </nav>
 
@@ -495,19 +486,19 @@ function App() {
           )}
 
           <header className="demo-header">
-            <p>Configure how your vault&apos;s yield supports ecosystem growth</p>
+            <p>Configure how your vault&apos;s yield supports verified beneficiaries</p>
           </header>
 
           <section className="demo-panel">
             <div className="vault-summary">
-              <p className="vault-label">Dragon Vault L1</p>
-              <h2>Dragon Vault L1</h2>
+              <p className="vault-label">YieldRelay Vault</p>
+              <h2>YieldRelay Vault</h2>
               <p className="stat-label">Principal</p>
-              <p className="stat-value">{formatCurrency(managedAssetsValue)}</p>
+              <p className="stat-value">{formatCurrency(tvl)}</p>
               <p className="stat-label">APY</p>
               <p className="stat-value apy">{DISPLAY_APY.toFixed(1)}%</p>
-              <p className="stat-label">Projected Monthly Yield</p>
-              <p className="stat-value">{formatCurrency(projectedMonthlyYield)}</p>
+              <p className="stat-label">Accrued Yield</p>
+              <p className="stat-value">{formatCurrency(accruedYieldValue)}</p>
 
               <div className="yield-sources">
                 <p className="section-label">Yield Sources</p>
@@ -545,12 +536,12 @@ function App() {
                 <strong>{formatCurrency(tvl)}</strong>
               </div>
               <div className="stat-row">
-                <span>Your Shares</span>
-                <strong>{isConnected ? formatCurrency(userShareValue) : 'Connect wallet'}</strong>
+                <span>Your Principal</span>
+                <strong>{isConnected ? formatCurrency(userPrincipalValue) : 'Connect wallet'}</strong>
               </div>
               <div className="stat-row">
-                <span>Queued Yield</span>
-                <strong>{formatCurrency(routerBalanceValue)}</strong>
+                <span>Your Pending Yield</span>
+                <strong>{isConnected ? formatCurrency(userPendingYieldValue) : 'Connect wallet'}</strong>
               </div>
             </article>
 
@@ -579,6 +570,7 @@ function App() {
                   </a>
                 )}
               </p>
+              <p className="form-helper">Uses the current beneficiary splits (must total 100%).</p>
               {needsApproval && (
                 <button
                   className="btn btn-ghost"
@@ -591,9 +583,31 @@ function App() {
               <button
                 className="btn btn-secondary"
                 onClick={handleDeposit}
-                disabled={!depositAmountUnits || pendingAction !== null || needsApproval}
+                disabled={!depositAmountUnits || pendingAction !== null || needsApproval || !allocationSumIsValid}
               >
                 {pendingAction === 'Deposit' ? 'Processing…' : 'Deposit'}
+              </button>
+            </article>
+
+            <article className="form-card">
+              <h4>Mint Test Tokens</h4>
+              <label htmlFor="mint-input">Amount ({assetSymbol})</label>
+              <input
+                id="mint-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={mintAmount}
+                onChange={(event) => setMintAmount(event.target.value)}
+                placeholder="0.00"
+              />
+              <p className="form-helper">Mints mock tokens to your connected wallet.</p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleMint}
+                disabled={!mintAmountUnits || pendingAction !== null || !isConnected}
+              >
+                {pendingAction === 'Mint' ? 'Minting…' : 'Mint Tokens'}
               </button>
             </article>
 
@@ -609,7 +623,7 @@ function App() {
                 onChange={(event) => setWithdrawAmount(event.target.value)}
                 placeholder="0.00"
               />
-              <p className="form-helper">Available: {formatCurrency(userShareValue)}</p>
+              <p className="form-helper">Available: {formatCurrency(userPrincipalValue)}</p>
               <button
                 className="btn btn-secondary"
                 onClick={handleWithdraw}
@@ -625,17 +639,17 @@ function App() {
           <section className="allocation-panel">
             <header className="allocation-header">
               <div>
-                <h3>Allocation Controls</h3>
-                <p>Adjust target weighting in basis points (max 100%).</p>
+                <h3>Beneficiary Splits</h3>
+                <p>Adjust split percentages (must sum to 100%).</p>
               </div>
               <p>Sum: {allocationSum.toFixed(1)}%</p>
             </header>
-            {programs.length === 0 && <p className="form-helper">Add programs in the router to edit allocations.</p>}
-            {programs.map((program, idx) => (
-              <div key={program.id} className="allocation-row">
+            {beneficiaries.length === 0 && <p className="form-helper">Add beneficiaries to configure splits.</p>}
+            {beneficiaries.map((beneficiary, idx) => (
+              <div key={beneficiary.address} className="allocation-row">
                 <div>
-                  <p className="allocation-title">{programTitle(program)}</p>
-                  <p className="form-helper">Recipient: {program.recipient}</p>
+                  <p className="allocation-title">{beneficiaryTitle(beneficiary, idx)}</p>
+                  <p className="form-helper">Recipient: {beneficiary.address}</p>
                 </div>
                 <div className="slider-field">
                   <input
@@ -643,7 +657,7 @@ function App() {
                     min={0}
                     max={100}
                     step={0.5}
-                    value={allocationDraft[idx] ?? program.bps / 100}
+                    value={allocationDraft[idx] ?? 0}
                     onChange={(event) => {
                       const next = Number(event.target.value);
                       setAllocationDraft((draft) => {
@@ -653,20 +667,29 @@ function App() {
                       });
                     }}
                   />
-                  <span>{(allocationDraft[idx] ?? program.bps / 100).toFixed(1)}%</span>
+                  <span>{(allocationDraft[idx] ?? 0).toFixed(1)}%</span>
                 </div>
               </div>
             ))}
             <div className="allocation-actions">
-              <button className="btn btn-ghost" onClick={() => setAllocationDraft(programs.map((program) => program.bps / 100))}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  const evenSplit = Math.floor(1000 / beneficiaries.length) / 10;
+                  const remainder = 100 - evenSplit * (beneficiaries.length - 1);
+                  setAllocationDraft(
+                    beneficiaries.map((_, idx) => (idx === beneficiaries.length - 1 ? remainder : evenSplit)),
+                  );
+                }}
+              >
                 Reset
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={handleSaveAllocations}
-                disabled={!programs.length || allocationSum > 100 || allocationsMatchOnChain || pendingAction !== null}
+                disabled={!beneficiaries.length || !allocationSumIsValid || pendingAction !== null}
               >
-                Save Allocations
+                Save Splits
               </button>
             </div>
           </section>
@@ -675,40 +698,51 @@ function App() {
             <div className="routing-card">
               <header>
                 <div>
-                  <p className="section-label">Yield Routing Review</p>
-                  <h3>Active Programs</h3>
+                  <p className="section-label">Beneficiaries</p>
+                  <h3>Claimable Yield</h3>
                 </div>
               </header>
               <ul>
-                {(impactPrograms.length ? impactPrograms : simulationPrograms).map((program) => (
-                  <li key={program.id}>
+                {beneficiaryClaimables.map((beneficiary) => (
+                  <li key={beneficiary.address}>
                     <div className="program-row">
-                      <strong>{program.title}</strong>
-                      <span>{program.percent.toFixed(1)}%</span>
+                      <strong>{beneficiary.title}</strong>
+                      <span>{formatCurrency(beneficiary.claimable)}</span>
                     </div>
-                    <p>{program.description}</p>
-                    <p className="program-amount">{formatCurrency(program.amount ?? 0)}</p>
+                    <p>{beneficiary.description}</p>
+                    <p className="program-amount">{beneficiary.address}</p>
                   </li>
                 ))}
               </ul>
             </div>
             <div className="routing-card total-card">
-              <p className="section-label">Funds Queued in Router</p>
-              <p className="total-value">{formatCurrency(routerBalanceValue)}</p>
-              <button className="btn btn-secondary" onClick={handleRoute} disabled={pendingAction !== null}>
-                {pendingAction === 'Route' ? 'Routing…' : 'Route Yield'}
+              <p className="section-label">Yield Actions</p>
+              <p className="total-value">{formatCurrency(accruedYieldValue)}</p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleAllocateYield}
+                disabled={pendingAction !== null || !isConnected}
+              >
+                {pendingAction === 'Allocate Yield' ? 'Allocating…' : 'Allocate Yield'}
               </button>
+              <button
+                className="btn btn-ghost"
+                onClick={handleClaimYield}
+                disabled={pendingAction !== null || connectedBeneficiaryIndex < 0}
+              >
+                {pendingAction === 'Claim Yield' ? 'Claiming…' : 'Claim Yield'}
+              </button>
+              {connectedBeneficiaryIndex < 0 && (
+                <p className="form-helper">Connect with a beneficiary wallet to claim.</p>
+              )}
+              {connectedBeneficiaryIndex >= 0 && (
+                <p className="form-helper">
+                  Claimable for you: {formatCurrency(connectedClaimableValue)}
+                </p>
+              )}
             </div>
           </section>
         </div>
-        {showSimulation && (
-          <SimulationModal
-            projectedYield={projectedMonthlyYield}
-            totalRouted={routerBalanceValue}
-            programs={simulationPrograms}
-            onClose={() => setShowSimulation(false)}
-          />
-        )}
       </div>
     );
   }
@@ -723,7 +757,7 @@ function App() {
             <div className="brand-icon" aria-hidden>
               <span />
             </div>
-            <p className="brand-eyebrow">oCtant Mini</p>
+            <p className="brand-eyebrow">YieldRelay</p>
           </div>
           <div className="header-actions">
             <ConnectButton />

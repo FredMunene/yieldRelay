@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage example (Sepolia mock deployment):
+# Usage example (YieldRelay mock deployment):
 #   ./smart_contracts/scripts/run-full-flow.sh \
-#       --vault 0xE1a3D049300BC36c448f5530C8efbA0Ec9E3Be27 \
-#       --router 0x4331c7Df086A7711D9a80701A4bCc1C167aF3bdf \
-#       --strategy 0x8B588D1bBb680b82d1dCF88D847Aa8cF63c44600 \
-#       --asset 0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8 \
+#       --vault 0x... \
+#       --router 0x... \
+#       --registry 0x... \
+#       --asset 0x... \
 #       --rpc https://sepolia.infura.io/v3/<key> \
-#       --pk $PRIVATE_KEY
-#       --holder 0x42772299247add126151ade909e36a8f4975437e \
+#       --pk $PRIVATE_KEY \
+#       --holder 0x... \
 #       --amount 5000000 \
+#       --beneficiaries '["0x...","0x..."]' \
+#       --bps "[6000,4000]" \
 #       --skip-mint
 #
 # Flags:
 #   --holder <address>     Explicit holder (defaults to signer derived from --pk)
 #   --amount <wei>         Amount to deposit/forward (default 5e18)
 #   --mint-amount <wei>    Amount to mint when using mock asset (default 1e19)
+#   --beneficiaries <json> JSON array of beneficiary addresses
+#   --bps <json>           JSON array of uint16 bps (must sum to 10_000)
 #   --skip-mint            Skip minting (when using a real asset)
+#   --simulate-yield <wei> Mint mock aTokens to the vault (only works with MockAToken)
+#   --atoken <address>     Required when using --simulate-yield
 #
-# The script mints (if enabled), approves, deposits into the vault, forwards only available
-# liquidity, deploys whatever the strategy holds, then calls harvest + route.
+# The script mints (if enabled), approves, deposits into the vault, optionally simulates
+# yield, allocates yield, then claims to each beneficiary.
 AMOUNT_WEI=5000000000000000000 # 5 tokens at 18 decimals
 MINT=true
 MINT_AMOUNT=10000000000000000000
@@ -43,13 +49,17 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --vault) VAULT="$2"; shift 2 ;;
         --router) ROUTER="$2"; shift 2 ;;
-        --strategy) STRATEGY="$2"; shift 2 ;;
+        --registry) REGISTRY="$2"; shift 2 ;;
         --asset) ASSET="$2"; shift 2 ;;
         --rpc) RPC="$2"; shift 2 ;;
         --pk) PK="$2"; shift 2 ;;
         --holder) HOLDER="$2"; shift 2 ;;
         --amount) AMOUNT_WEI="$2"; shift 2 ;;
         --mint-amount) MINT_AMOUNT="$2"; shift 2 ;;
+        --beneficiaries) BENEFICIARIES="$2"; shift 2 ;;
+        --bps) BPS="$2"; shift 2 ;;
+        --simulate-yield) SIM_YIELD="$2"; shift 2 ;;
+        --atoken) ATOKEN="$2"; shift 2 ;;
         --skip-mint) MINT=false; shift ;;
         *) echo "Unknown arg: $1" >&2; exit 1 ;;
     esac
@@ -57,12 +67,39 @@ done
 
 : "${VAULT:?missing --vault}"
 : "${ROUTER:?missing --router}"
-: "${STRATEGY:?missing --strategy}"
+: "${REGISTRY:?missing --registry}"
 : "${ASSET:?missing --asset}"
 : "${RPC:?missing --rpc}"
 : "${PK:?missing --pk}"
+: "${BENEFICIARIES:?missing --beneficiaries}"
+: "${BPS:?missing --bps}"
 
 HOLDER="${HOLDER:-$(cast wallet address --private-key "$PK")}"
+
+BENEFICIARIES_JSON=$(python3 - <<'PY'
+import json, os
+
+raw = os.environ.get("BENEFICIARIES", "").strip()
+if not raw:
+    print("[]")
+    raise SystemExit
+
+if '"' in raw:
+    print(raw)
+    raise SystemExit
+
+if raw.startswith("[") and raw.endswith("]"):
+    inner = raw[1:-1].strip()
+    if not inner:
+        print("[]")
+        raise SystemExit
+    arr = [item.strip() for item in inner.split(",") if item.strip()]
+    print(json.dumps(arr))
+    raise SystemExit
+
+print(json.dumps([raw]))
+PY
+)
 
 echo "Using holder $HOLDER"
 echo "Operating amount (wei): $AMOUNT_WEI"
@@ -78,44 +115,40 @@ fi
 cast send "$ASSET" "approve(address,uint256)" "$VAULT" "$AMOUNT_WEI" \
     --private-key "$PK" --rpc-url "$RPC"
 
-cast send "$VAULT" "deposit(uint256,address)" "$AMOUNT_WEI" "$HOLDER" \
+cast send "$VAULT" "deposit(uint256,address[],uint16[])" "$AMOUNT_WEI" \
+    "$BENEFICIARIES" "$BPS" \
     --private-key "$PK" --rpc-url "$RPC"
 
-# Determine available liquidity before forwarding
-available_raw=$(cast call "$VAULT" "availableLiquidity()(uint256)" --rpc-url "$RPC" 2>/dev/null || echo "0")
-available_dec=$(parse_uint "$available_raw")
-if [[ "$available_dec" -lt "$AMOUNT_WEI" ]]; then
-    echo "Requested amount exceeds available liquidity ($available_dec), reducing forward amount."
-    FORWARD_AMOUNT="$available_dec"
-else
-    FORWARD_AMOUNT="$AMOUNT_WEI"
+# Optional: simulate yield with MockAToken forceMint (mock-only)
+if [[ -n "${SIM_YIELD:-}" ]]; then
+    : "${ATOKEN:?missing --atoken for --simulate-yield}"
+    echo "Simulating yield by minting $SIM_YIELD aTokens to vault (mock only)."
+    cast send "$ATOKEN" "forceMint(address,uint256)" "$VAULT" "$SIM_YIELD" \
+        --private-key "$PK" --rpc-url "$RPC"
 fi
 
-if [[ "$FORWARD_AMOUNT" == "0" ]]; then
-    echo "No liquidity available to forward; aborting."
-    exit 1
-fi
-
-cast send "$VAULT" "forwardToStrategy(uint256)" "$FORWARD_AMOUNT" \
+# Allocate yield for depositor and report claimable for each beneficiary
+cast send "$VAULT" "allocateYield(address)" "$HOLDER" \
     --private-key "$PK" --rpc-url "$RPC"
 
-# Deploy only what the strategy currently holds
-strategy_balance_raw=$(cast call "$ASSET" "balanceOf(address)(uint256)" "$STRATEGY" --rpc-url "$RPC" 2>/dev/null || echo "0")
-strategy_balance_dec=$(parse_uint "$strategy_balance_raw")
-DEPLOY_AMOUNT="$strategy_balance_dec"
-if [[ "$DEPLOY_AMOUNT" == "0" ]]; then
-    echo "Strategy holds zero balance after forwarding; aborting."
-    exit 1
-fi
+export BENEFICIARIES
+export BENEFICIARIES_JSON
+export ROUTER
+export RPC
 
-cast send "$STRATEGY" "deployFunds(uint256)" "$DEPLOY_AMOUNT" \
-    --private-key "$PK" --rpc-url "$RPC"
+python3 - <<'PY'
+import json, os, subprocess
 
-# Trigger harvest (profit/loss calculation) and routing
-cast send "$STRATEGY" "harvestAndReport()" \
-    --private-key "$PK" --rpc-url "$RPC"
+beneficiaries = json.loads(os.environ.get("BENEFICIARIES_JSON", "[]"))
+router = os.environ["ROUTER"]
+rpc = os.environ["RPC"]
 
-cast send "$ROUTER" "route()" \
-    --private-key "$PK" --rpc-url "$RPC"
+for b in beneficiaries:
+    output = subprocess.check_output(
+        ["cast", "call", router, "claimable(address)(uint256)", b, "--rpc-url", rpc],
+        text=True,
+    ).strip()
+    print(f"Claimable for {b}: {output}")
+PY
 
 echo "End-to-end flow executed."

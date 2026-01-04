@@ -10,15 +10,16 @@ import {BeneficiaryRegistry} from "../src/registry/BeneficiaryRegistry.sol";
 import {IAToken} from "../src/interfaces/IAToken.sol";
 import {IAaveV3Pool} from "../src/interfaces/IAaveV3Pool.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
+import {MockAToken} from "../test/mocks/MockAToken.sol";
+import {MockAavePool} from "../test/mocks/MockAavePool.sol";
 
 /// @notice Deploys YieldRelay core contracts and optionally a mock ERC20.
 /// @dev Env vars:
 /// - PRIVATE_KEY: deployer key used for broadcasting
 /// - YR_ASSET (optional): pre-existing ERC20 asset; deploys mock if unset/zero
-/// - YR_ATOKEN: Aave aToken address
-/// - YR_AAVE_POOL: Aave pool address
 /// - YR_ADMIN (optional): owner/admin address (defaults to PRIVATE_KEY signer)
 /// - YR_INITIAL_MINT (optional): amount minted to admin when deploying a mock asset
+/// - YR_POOL_SEED (optional): amount minted to the mock pool for withdrawals
 /// - YR_BENEFICIARY_COUNT (optional): number of registry entries to seed
 /// - YR_BENEFICIARY_{i}_ADDR / _META: registry seed values
 contract DeployYieldRelay is Script {
@@ -26,17 +27,15 @@ contract DeployYieldRelay is Script {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address admin = vm.envOr("YR_ADMIN", vm.addr(deployerKey));
         address assetAddr = vm.envOr("YR_ASSET", address(0));
-        address aTokenAddr = vm.envAddress("YR_ATOKEN");
-        address poolAddr = vm.envAddress("YR_AAVE_POOL");
-
         vm.startBroadcast(deployerKey);
 
         IERC20 asset = _ensureAsset(assetAddr, admin);
         BeneficiaryRegistry registry = new BeneficiaryRegistry(admin);
         YieldRouter router = new YieldRouter(asset, registry, admin);
-        YieldRelayVault vault = new YieldRelayVault(
-            asset, IAaveV3Pool(poolAddr), IAToken(aTokenAddr), router, registry
-        );
+
+        (IAaveV3Pool pool, IAToken aToken) = _deployMocks(asset);
+
+        YieldRelayVault vault = new YieldRelayVault(asset, pool, aToken, router, registry);
         router.setVault(address(vault));
 
         _seedBeneficiaries(registry);
@@ -67,6 +66,20 @@ contract DeployYieldRelay is Script {
                 vm.envString(string.concat("YR_BENEFICIARY_", index, "_META"));
             registry.addBeneficiary(beneficiary, metadata);
         }
+    }
+
+    function _deployMocks(IERC20 asset)
+        internal
+        returns (IAaveV3Pool pool, IAToken aToken)
+    {
+        MockAToken mockAToken = new MockAToken(address(asset));
+        MockAavePool mockPool = new MockAavePool(asset, mockAToken);
+        mockAToken.setPool(address(mockPool));
+
+        uint256 seedAmount = vm.envOr("YR_POOL_SEED", uint256(1_000_000 ether));
+        mockPool.seed(seedAmount);
+
+        return (IAaveV3Pool(address(mockPool)), IAToken(address(mockAToken)));
     }
 
     function _logDeployments(

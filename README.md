@@ -97,6 +97,8 @@ No personal data or KYC information is stored on-chain.
 forge script smart_contracts/script/DeployYieldRelay.s.sol --rpc-url $RPC_URL --broadcast
 ```
 
+Deploy script uses mock `MockAToken` + `MockAavePool` for the yield source.
+
 ---
 
 ## Repository Structure
