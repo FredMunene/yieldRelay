@@ -110,31 +110,12 @@ const yieldSources = ['Mock Aave Pool', 'YieldRelay Router'];
 const placeholderLandingVaults = [
   {
     id: 'create',
-    name: 'Create Vault',
+    name: 'Create Relay',
     variant: 'stable' as const,
     principal: 'Configure splits',
     apy: 'Choose beneficiaries',
     topFundedLabel: 'Status',
     topFundedValue: 'Ready to deploy',
-  },
-  {
-    id: 'current',
-    name: 'Current Vault',
-    variant: 'experimental' as const,
-    principal: '$ 0.00',
-    apy: '0.0%',
-    topFundedLabel: 'Beneficiaries',
-    topFundedValue: 'Configured splits',
-    action: 'View Dashboard',
-  },
-  {
-    id: 'beneficiaries',
-    name: 'Beneficiaries',
-    variant: 'stable' as const,
-    principal: 'Verify eligibility',
-    apy: 'Claim yield',
-    topFundedLabel: 'Compliance',
-    topFundedValue: 'Registry-backed',
   },
 ];
 
@@ -857,15 +838,14 @@ function App() {
             {landingVaults.map((vault) => (
               <article key={vault.id} className={`vault-card ${vault.variant}`}>
                 <div className="vault-card__body">
-                  <p className="vault-label">{renderVaultLabel(vault.name)}</p>
                   <h3>{vault.name}</h3>
                   <div className="stat-block">
                     <div>
-                      <p className="stat-label">Principal</p>
+                      <p className="stat-label">Splits</p>
                       <p className="stat-value">{vault.principal}</p>
                     </div>
                     <div>
-                      <p className="stat-label">APY</p>
+                      <p className="stat-label">Beneficiaries</p>
                       <p className="stat-value apy">{vault.apy}</p>
                     </div>
                   </div>

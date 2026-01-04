@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @title IAaveV3Pool
-/// @notice Minimal subset of the Aave v3 Pool interface needed by Octant Mini strategy contracts.
+/// @notice Minimal subset of the Aave v3 Pool interface needed by YieldRelay strategy contracts.
 /// @dev Reference: https://docs.aave.com/developers/core-contracts/pool
 interface IAaveV3Pool {
     function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;

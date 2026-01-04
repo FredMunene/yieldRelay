@@ -24,7 +24,7 @@ Append entries whenever you hit an error, apply a significant fix, or uncover a 
 - [Link to external docs, Etherscan, etc.]
 ```
 
-> Always include direct URLs when referencing third-party documentation (ERC-4626, Aave v3, Octant v2, etc.).
+> Always include direct URLs when referencing third-party documentation (ERC-4626, Aave v3, etc.).
 
 ## [2025-11-07 23:31] Forge compile blocked by `mcopy`
 
