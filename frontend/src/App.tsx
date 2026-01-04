@@ -296,6 +296,23 @@ function App() {
         value: vault.apy,
       }));
 
+  const donutGradient = useMemo(() => {
+    if (!beneficiaries.length) return undefined;
+    const colors = ['#7f58ff', '#47f1b2', '#8e9bff', '#ffb86b', '#66d9ef'];
+    const total = allocationSum > 0 ? allocationSum : 100;
+    let cursor = 0;
+    const stops = beneficiaries.map((_, idx) => {
+      const value = allocationDraft[idx] ?? 0;
+      const slice = (value / total) * 100;
+      const start = cursor;
+      const end = cursor + slice;
+      cursor = end;
+      return `${colors[idx % colors.length]} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+    });
+    if (!stops.length) return undefined;
+    return `conic-gradient(${stops.join(', ')})`;
+  }, [beneficiaries.length, allocationDraft, allocationSum]);
+
   const beneficiaryClaimables = beneficiaries.map((beneficiary, idx) => {
     const result = claimableResults.data?.[idx];
     const raw = result?.result as bigint | undefined;
@@ -511,7 +528,12 @@ function App() {
             </div>
 
             <div className="vault-analytics">
-              <div className="donut-chart" aria-label="Yield allocation chart" role="img">
+              <div
+                className="donut-chart"
+                aria-label="Yield allocation chart"
+                role="img"
+                style={donutGradient ? { background: donutGradient } : undefined}
+              >
                 <div className="donut-hole" />
               </div>
               <div className="allocation-card">
@@ -661,9 +683,60 @@ function App() {
                     onChange={(event) => {
                       const next = Number(event.target.value);
                       setAllocationDraft((draft) => {
+                        const total = 100;
                         const clone = [...draft];
+                        const prev = clone[idx] ?? 0;
+                        const delta = next - prev;
+                        if (delta === 0) return clone;
+
                         clone[idx] = next;
-                        return clone;
+                        if (clone.length === 1) {
+                          clone[idx] = total;
+                          return clone;
+                        }
+
+                        const others = clone
+                          .map((value, index) => ({ value: value ?? 0, index }))
+                          .filter((item) => item.index !== idx);
+
+                        const otherTotal = others.reduce((sum, item) => sum + item.value, 0);
+                        let remainingDelta = delta;
+                        const adjusted = [...clone];
+
+                        const ordered = delta > 0
+                          ? [...others].sort((a, b) => b.value - a.value)
+                          : [...others].sort((a, b) => a.value - b.value);
+
+                        for (const item of ordered) {
+                          if (remainingDelta === 0) break;
+                          const current = adjusted[item.index] ?? 0;
+                          if (delta > 0) {
+                            const available = current;
+                            const take = Math.min(available, remainingDelta);
+                            adjusted[item.index] = current - take;
+                            remainingDelta -= take;
+                          } else {
+                            const available = total - current;
+                            const give = Math.min(available, -remainingDelta);
+                            adjusted[item.index] = current + give;
+                            remainingDelta += give;
+                          }
+                        }
+
+                        if (Math.abs(remainingDelta) > 0.0001 && otherTotal > 0) {
+                          const scale = (otherTotal - delta) / otherTotal;
+                          for (const item of others) {
+                            adjusted[item.index] = Math.max(0, Math.min(100, (adjusted[item.index] ?? 0) * scale));
+                          }
+                        }
+
+                        const sum = adjusted.reduce((sum, value) => sum + (value ?? 0), 0);
+                        if (sum !== total) {
+                          const target = others.length ? others[others.length - 1].index : idx;
+                          adjusted[target] = Math.max(0, Math.min(100, (adjusted[target] ?? 0) + (total - sum)));
+                        }
+
+                        return adjusted;
                       });
                     }}
                   />
