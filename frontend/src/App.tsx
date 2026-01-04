@@ -26,8 +26,19 @@ type FlowCard = {
 };
 
 type BeneficiaryConfig = {
-  address: `0x${string}`;
-  metadataURI: string;
+  readonly address: `0x${string}`;
+  readonly metadataURI: string;
+};
+
+type VaultCard = {
+  id: string;
+  name: string;
+  variant: 'stable' | 'experimental' | 'l1';
+  principal: string;
+  apy: string;
+  topFundedLabel: string;
+  topFundedValue: string;
+  action?: string;
 };
 
 const flows: FlowCard[] = [
@@ -107,7 +118,7 @@ const iconMap: Record<string, JSX.Element> = {
 
 const yieldSources = ['Mock Aave Pool', 'YieldRelay Router'];
 
-const placeholderLandingVaults = [
+const placeholderLandingVaults: VaultCard[] = [
   {
     id: 'create',
     name: 'Create Relay',
@@ -201,7 +212,7 @@ function App() {
     query: { enabled: Boolean(address), refetchInterval: 15000 },
   });
 
-  const beneficiaries = BENEFICIARIES as BeneficiaryConfig[];
+  const beneficiaries: ReadonlyArray<BeneficiaryConfig> = BENEFICIARIES;
   const claimableResults = useReadContracts({
     contracts: beneficiaries.map((beneficiary) => ({
       address: CONTRACTS.router,
@@ -445,7 +456,7 @@ function App() {
     setView('landing');
   };
 
-  const heroVaultCard = {
+  const heroVaultCard: VaultCard = {
     id: 'l1',
     name: 'YieldRelay Vault',
     variant: 'l1' as const,
