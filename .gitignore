@@ -17,6 +17,7 @@ package-lock.json
 .env
 .env.*
 
+dist/
 # Editor
 .DS_Store
 *.swp
