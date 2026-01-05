@@ -5,20 +5,17 @@
 
 ## Summary
 
-**YieldRelay** is a compliance-aware yield routing primitive that preserves capital while routing only **accrued yield** to verified real-world beneficiaries. Built on Mantle, it separates **principal ownership** from **yield distribution** using on-chain capital markets as the yield source.
+**YieldRelay** is a compliance-aware RealFi infrastructure primitive on Mantle that preserves capital while routing only **accrued yield** to verified real-world beneficiaries.
+
+Built on Mantle and integrated with Aave, YieldRelay separates **principal ownership** from **yield distribution**, enabling sustainable funding for social infrastructure, DAOs, and public-good initiatives without spending principal.
 
 ---
 
 ## 🌱 Story
 
-In 2024‑2025, even major DAOs showed how fragile governance and treasury management can be.
+Recent DAO shutdowns and governance pauses across major ecosystems have exposed a deeper issue: communities struggle to turn treasury capital into sustained impact when governance becomes slow, fragile, or overly complex.
 
-- **Jupiter DAO** (Solana DEX aggregator) paused all governance votes until 2026, citing a “breakdown in trust” in its processes.
-- **Scroll DAO** (Ethereum Layer‑2 protocol) stopped governance after multiple leadership resignations, leaving key treasury and funding proposals in limbo.
-
-These stories aren’t just headlines — they reveal a bigger problem: **DAOs and communities struggle to turn treasury capital into impact when governance stalls or becomes too complex**.
-
-That’s where **YieldRelay** comes in. It’s a simple, plug-and-play tool that helps communities generate yield from idle funds and route it to grants, builders, and ecosystem projects automatically, **without touching the principal** and **without requiring endless votes**.
+YieldRelay takes a different approach. Instead of relying on continuous votes or manual grant cycles, it enables communities to generate yield from idle capital and automatically route that yield to builders, grants, and ecosystem programs—**without touching principal** and **without requiring constant governance intervention**.
 
 ---
 
@@ -124,28 +121,19 @@ Check out a short demo video showing how deposits, yield generation, and allocat
 
 ---
 
-## Faucets
-
-For hackathon testing, you can claim test funds (ETH or Aave assets) here:
-
-- [Aave Usdc Testnet Faucet](https://app.aave.com/faucet)
-
-These funds allow you to try deposits, simulate yield, and test routing without using real assets.
-
----
 
 ## ⚙ How to Use
 
 You can either try **the live demo** or run it locally:
 
 ### Live Demo
-[Visit YieldRelay live](https://)
+[Visit YieldRelay live](https://yieldrelay.vercel.app/)
 
 ### Local Setup (for developers / hackathon judges)
 
 ```bash
-git clone https://github.com/your-repo/yieldrelay.git
-cd yieldrelay
+git clone https://github.com/Fredmunene/yieldrelay.git
+cd yieldrelay/frontend
 npm install
 npm start
 ```
@@ -153,7 +141,8 @@ npm start
 Open your browser at http://localhost:3000 and explore the dashboard. It shows:
 
 - Total deposited funds
-- Live yield (~5% APY MVP)
+- - Accrued yield generated from the underlying vault (simulated for MVP)
+
 - Distribution flow to grants, builders, or other projects
 
 ---
